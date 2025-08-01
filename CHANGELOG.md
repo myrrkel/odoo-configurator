@@ -5,6 +5,108 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.3]
+
+### Added 
+
+ - OdooConnection context language can now be set using '--lang' argument
+
+## [3.7.2] - 2025-07-28
+
+### Added 
+
+ - Allows to use system_parameter in script files. /!\ This may set some parameters that were ignored before.
+
+
+## [3.7.1] - 2025-05-12
+
+### Fixed 
+
+ - Avoid unexpected behavior on res.config.settings update
+
+
+## [3.7.0] - 2025-04-17
+
+### Added
+
+ - Add `SLACK_TOKEN` environment variable
+ - Add `dest_path` parameter for imports
+ - Add `configurator_version` parameter to define Odoo Configurator version in yml file
+ - moved `get_dir_full_path` and `get_file_full_path` static functions to Utils Class
+
+## Fixed
+
+ - Improve slow datas updates with load parameter
+
+## [3.6.10] - 2025-04-06
+
+### Added
+
+ - Add `--slack-token` parameter
+
+## [3.6.9] - 2025-04-04
+
+### Added
+
+ - Add Slack notifications
+
+
+## [3.6.8] - 2025-02-06
+
+### Fixed
+
+ - Fix imports group_by and record name prefix
+ - Update s6r-odoo
+
+## [3.6.7] - 2025-01-23
+
+### Added
+
+ - Allows to use "field_name_ids.ids" to provide a string that will be evaluated to compute the raw values for a many2many field. 
+ - Add mysql sql connector and fix duplicates columns
+
+## [3.6.6] - 2024-12-17
+
+### Added
+
+ - Allows to import all the datas of a module with 'import_configurator_module'
+
+## [3.6.5] - 2024-11-25
+
+### Added
+
+ - Update s6r-odoo to version 2.0.0 introducing Record and RecordSet concepts
+
+
+## [3.6.4] - 2024-11-13
+
+### Fixed
+
+ - Import module no longer auto-apply when initialized before scripts execution
+ - Added requests and unidecode dependencies that were missing
+
+### Added
+ - Allows to use MySQL connection in python script files
+ - Added a new class for utility functions => utils.py
+ - new method get_env_var() to get variable environment from yaml files
+
+## [3.6.2] - 2024-11-04
+
+### Added
+
+ - Allows to pass a list of xmlid to import
+ - Allows to do csv imports in script mode
+ - load_batch method now returns response from API
+ - Caching of external_ids is now executed only when explicitly needed
+ - Caching of modules is now executed only when explicitly needed
+
+## [3.6.1] - 2024-09-30
+
+### Added
+
+ - Allows to add several connections to different Odoo databases
+ - Allows to add sql connections to PostgresSQL and MSSQL databases and use them in script files
+
 ## [3.6.0] - 2024-09-25
 
 ### Added

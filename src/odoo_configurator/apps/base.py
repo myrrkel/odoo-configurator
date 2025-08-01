@@ -7,6 +7,7 @@ from collections import OrderedDict
 from ..odoo_connection import OdooConnection
 from ..keepass import KeepassCli
 from ..bitwarden import Bitwarden
+from ..utils import Utils
 
 from ..logging import get_logger
 
@@ -17,7 +18,9 @@ class OdooModule:
 
     def __init__(self, configurator):
         self._configurator = configurator
+        self.config = self._configurator.config
         self._connection = configurator.connection
+        self._utils = configurator.utils
         self._keepass_cli = configurator.keepass_cli
         self._bitwarden_cli = configurator.bitwarden_cli
         self._import_manager = configurator.import_manager
@@ -51,10 +54,10 @@ class OdooModule:
         raise NotImplementedError
 
     def _published_objects(self):
-        return self._connection, self._keepass_cli, self._bitwarden_cli
+        return self._connection, self._keepass_cli, self._bitwarden_cli, self._utils
 
     def _published_class(self):
-        return OdooConnection, KeepassCli, Bitwarden
+        return OdooConnection, KeepassCli, Bitwarden, Utils
 
     def install_mode(self):
         if 'install' in self._mode:
@@ -78,7 +81,7 @@ class OdooModule:
             pass
         return to_ret
 
-    def safe_eval(self, name):
+    def safe_eval(self, name, force=False):
         for object_class, methods in self.get_mapping_method().items():
             if name.split('(')[0] in methods:
                 for o in self._published_objects():
@@ -88,6 +91,11 @@ class OdooModule:
                             return eval("o.%s" % name)
                         except Exception as err:
                             raise err
+            elif name.split('(')[0].split('.')[-1] in methods and force:
+                for o in self._published_objects():
+                    if o.__class__.__name__ == object_class:
+                        return eval(name)
+
         raise Exception("Cannot eval %s" % name)
 
     def pre_config(self, config, rec=0):

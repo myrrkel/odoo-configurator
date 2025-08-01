@@ -10,18 +10,20 @@ from datetime import datetime
 import unidecode
 import re
 from pprint import pformat
-from .odoo_connection import get_file_full_path
-
 
 class ImportManager:
+    configurator = None
+    config = None
 
     def __init__(self, configurator):
+
         self.logger = get_logger("Imports ".ljust(15))
         self._connection = configurator.connection
         self.odoo = self._connection.odoo
         self._context_base = self._connection.context.copy()
         self._context_base.update({'tracking_disable': True, '__import__': True})
         self._context = self._context_base
+        self.utils = configurator.utils
 
         self.name_create_enabled_fields = ''
         self.context = False
@@ -113,7 +115,7 @@ class ImportManager:
 
     def parse_csv_file_dictreader(self, file_path, fields, delimiter=","):
         vals = []
-        file_path = get_file_full_path(file_path)
+        file_path = self.utils.get_file_full_path(file_path)
         with open(file_path, 'r') as csvfile:
             reader = csv.DictReader(csvfile, skipinitialspace=True, delimiter=delimiter, quotechar='"')
             for i in range(self.skip_line):
@@ -153,7 +155,7 @@ class ImportManager:
             # print(load_keys)
             # print(data)
             load_datas[-1].append([data[i] for i in load_keys])
-
+        res = {}
         cc = 0
         for load_data in load_datas:
             start_batch = datetime.now()
@@ -184,6 +186,7 @@ class ImportManager:
 
         stop = datetime.now()
         self.logger.info("\t\t\tTotal time %s" % (stop - start))
+        return res
 
     def set_params(self, params):
 
@@ -201,6 +204,8 @@ class ImportManager:
         self.skip_line = params.get('skip_line', 0)
         self.batch_size = params.get('batch_size', 1000)
         self.ignore_errors = params.get('ignore_errors', [])
+        self.configurator = params.get('configurator', None)
+        self.config = params.get('config', None)
 
         self._context = self._context_base.copy()
         if self.name_create_enabled_fields:

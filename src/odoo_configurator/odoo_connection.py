@@ -13,6 +13,7 @@ import xmlrpc.client
 from pprint import pformat
 from .logging import get_logger
 from s6r_odoo import OdooConnection as Orm
+from .utils import Utils as utils
 
 import requests
 from bs4 import BeautifulSoup
@@ -24,38 +25,11 @@ METHODE_MAPPING = {
 }
 
 
-def get_file_full_path(path):
-    if not path:
-        return ''
-    param_path = path
-    if not os.path.isfile(path):
-        path = os.path.join(os.path.dirname(sys.argv[1]), param_path)
-    if not os.path.isfile(path):
-        path = os.path.join(os.path.dirname(sys.argv[1]), 'datas', param_path)
-    if not os.path.isfile(path):
-        raise FileNotFoundError('%s not found!' % param_path)
-    return path
-
-
-def get_dir_full_path(path):
-    if not path:
-        return ''
-    param_path = path
-    if not os.path.isdir(path):
-        path = os.path.join(os.path.dirname(sys.argv[1]), param_path)
-    if not os.path.isdir(path):
-        path = os.path.join(os.path.dirname(sys.argv[1]), 'datas', param_path)
-    if not os.path.isdir(path):
-        raise NotADirectoryError('%s not found!' % param_path)
-    return path
-
-
 class OdooConnection:
-    _context = {'lang': 'fr_FR', 'noupdate': True}
     _cache = {}
 
     def __init__(self, url, dbname, user, password, version=False, http_user=None, http_password=None, createdb=False,
-                 debug_xmlrpc=False, configurator=None):
+                 debug_xmlrpc=False, configurator=None, **kwargs):
         self.logger = get_logger("Odoo Connection".ljust(15))
         if debug_xmlrpc:
             self.logger.setLevel(logging.DEBUG)
@@ -69,14 +43,18 @@ class OdooConnection:
         self._http_password = http_password
         self._version = version
         self._configurator = configurator
+        self._context = {'lang': kwargs.get('lang') or 'fr_FR', 'noupdate': True}
         self.xmlid_cache = configurator.xmlid_cache if configurator else {}
         # noinspection PyProtectedMember,PyUnresolvedReferences
         self._insecure_context = ssl._create_unverified_context()
         self._load_cache()
         self._compute_url()
         try:
-            self.odoo = Orm(self._url, self._dbname, self._user, self._password)
+            self.odoo = Orm(self._url, self._dbname, self._user, self._password, debug_xmlrpc=debug_xmlrpc, lang=kwargs.get('lang','fr_FR'))
         except ConnectionError:
+            exit(1)
+        except xmlrpc.client.Fault as err:
+            self.logger.error(err.faultString)
             exit(1)
         except Exception as err:
             self.logger.error(err)
@@ -180,6 +158,8 @@ class OdooConnection:
         return self.execute_odoo(model, 'search', args, {'context': context})
 
     def get_ref(self, external_id):
+        if not self.xmlid_cache:  # load xml_id cache
+            self._configurator.get_external_config_xmlid_cache()
         if external_id in self.xmlid_cache:
             return self.xmlid_cache[external_id]
         res = self.execute_odoo('ir.model.data',
@@ -198,12 +178,12 @@ class OdooConnection:
         return self._cache['image_url'][url]
 
     def get_image_local(self, path):
-        path = get_file_full_path(path)
+        path = utils.get_file_full_path(path)
         return base64.b64encode(open(path, "rb").read()).decode("utf-8", "ignore")
 
     @staticmethod
     def get_local_file(path, encode=False):
-        path = get_file_full_path(path)
+        path = utils.get_file_full_path(path)
         if encode:
             with open(path, "rb") as f:
                 res = f.read()

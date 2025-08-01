@@ -10,6 +10,8 @@ from . import base
 from .config import OdooConfig
 from .modules import OdooModules
 from .users import OdooUsers
+from .imports import OdooImports
+from .system_parameter import OdooSystemParameter
 
 
 def prepare_load_values(load_fields, fields, values):
@@ -37,17 +39,21 @@ class OdooDatas(base.OdooModule):
                 data = values.get('datas', {})
                 if data:
                     self.logger.info("\tDatas - %s" % key)
-                    self.odoo_datas(data)
+                    self.odoo_datas(data, load=datas[key].get('load', False))
 
         scripts = datas.get('scripts', [])
         odoo_config = OdooConfig(self._configurator, auto_apply=False)
+        odoo_system_parameter = OdooSystemParameter(self._configurator, auto_apply=False)
         odoo_modules = OdooModules(self._configurator)
         odoo_users = OdooUsers(self._configurator)
+        odoo_imports = OdooImports(self._configurator, auto_apply=False)
         for script in scripts:
             self.logger.info("Script - %s" % script.get('title'))
             odoo_modules.install_config_modules(script)
             odoo_config.execute_script_config(script)
+            odoo_system_parameter.execute_script_config(script)
             odoo_users.execute(script)
+            odoo_imports.apply(script)
             self.execute(script)
 
     def execute_pre_update_config_datas(self):
@@ -57,26 +63,19 @@ class OdooDatas(base.OdooModule):
 
     def execute_update_config_datas(self):
         self.logger.info("Apply %s" % self._name)
-        self.get_external_config_xmlid_cache()
         self.execute(self._datas)
-
-    def get_external_config_xmlid_cache(self):
-        domain = [['module', '=', 'external_config']]
-        datas = self.execute_odoo('ir.model.data', 'search_read', [domain, ['name', 'res_id']], {'context': {}})
-        for data in datas:
-            self._configurator.xmlid_cache['external_config.%s' % data['name']] = data['res_id']
 
     def execute_config(self, config):
         if config:
             self.pre_config(config)
             self._connection.execute_config(config)
 
-    def odoo_datas(self, datas):
+    def odoo_datas(self, datas, load=False):
         self.pre_config(datas)
-        raw_load_values = []
-        load_fields = []
-        load = datas.pop('load', False)
+        load = load or datas.pop('load', False)
         model = datas.pop('model', False)
+        load_fields = []
+        raw_load_values = []
         for data in datas:
             object_ids = False
             self.logger.info("\t\t* %s" % data)
@@ -173,15 +172,26 @@ class OdooDatas(base.OdooModule):
             # prepare many2many list of xmlid
             keys = list(values.keys())
             for key in keys:
-                if isinstance(values[key], list) and '/id' in key:
+                if isinstance(values[key], list) and key.endswith('/id'):
                     if values[key] and isinstance(values[key][0], str) and '.' in values[key][0]:
                         if not force_id or isinstance(force_id, int):
                             field_name = key.replace('/id', '')
                             values[field_name] = [self.get_ref(v) for v in values[key]]
                             values.pop(key)
                         else:
-                            values[key] = ','.join(values[key])
-                elif isinstance(values[key], str) and '/id' in key:
+                            field_name = key.replace('/id', '.id')
+                            values[field_name] = ','.join([str(self.get_ref(v)) for v in values[key]])
+                            values.pop(key)
+
+                elif values[key] and isinstance(values[key], str) and key.endswith('.ids'):
+                    field_name = key.replace('.ids', '')
+                    many2many_values = self.eval_param_value(values[key], force_safe_eval=True)
+                    try:
+                        self.execute_odoo(model, 'write', [object_ids, {field_name : many2many_values}])
+                    except Exception as err:
+                        self.logger.error(err, exc_info=True)
+                    values.pop(key)
+                elif isinstance(values[key], str) and key.endswith('/id'):
                     if values[key] and '.' in values[key]:
                         if not force_id or isinstance(force_id, int):
                             field_name = key.replace('/id', '')
@@ -192,8 +202,6 @@ class OdooDatas(base.OdooModule):
                     values[field_name] = str(json.dumps(values[key]))
                     values.pop(key)
 
-            load_fields = []
-            raw_load_values = []
             if load:
                 fields, rec_values = self.save_values(model, values, config_context, force_id, object_ids,
                                                       load_batch=load)
@@ -242,6 +250,8 @@ class OdooDatas(base.OdooModule):
             if '.' not in force_id:
                 force_id = "external_config." + force_id
             values['id'] = force_id
+            if not self._configurator.xmlid_cache: #load xml_id cache
+                self._configurator.get_external_config_xmlid_cache()
             if force_id in self._configurator.xmlid_cache:
                 return values, self._configurator.xmlid_cache[force_id]
             module, name = force_id.split('.')
@@ -258,10 +268,10 @@ class OdooDatas(base.OdooModule):
         res = self.execute_odoo('ir.actions.server', 'run', [action_server_id], {'context': context},
                                 no_raise=no_raise)
 
-    def eval_param_value(self, param):
+    def eval_param_value(self, param, force_safe_eval=False):
         if isinstance(param, str):
-            if param.startswith('get_'):
-                return self.safe_eval(param)
+            if param.startswith('get_') or force_safe_eval:
+                return self.safe_eval(param, force=force_safe_eval)
             if param[0] in ['[', '{', '(']:
                 param_val = literal_eval(param)
                 return param_val

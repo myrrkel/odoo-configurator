@@ -39,6 +39,32 @@ Provided file must contain the auth/odoo section to set connexion parameters.
 
 The`version` parameter is required for odoo versions >= 15.0
 
+It's also possible to provide auth for other odoo servers, these connections can be used in python script files and specific imports.
+```yml
+    auth:
+      odoo:
+        url: http://project_name.localhost
+        dbname: project_name
+        username: admin
+        password: admin
+        version: 16.0
+      odoo_base_v8:
+        url: http://old.odoo.localhost
+        dbname: project_name_v8
+        username: admin
+        password: admin
+        version: 8.0
+      odoo_base_v17:
+        url: http://next.odoo.localhost
+        dbname: project_name_v17
+        username: admin
+        password: admin
+        version: 17.0
+```
+### Extra parameters
+When running odoo-configurator, you can provide the following optional arguments:
+- --lang: Set the language for the Odoo connection (default value: 'fr_FR')
+
 ## Inherits
 
 Inherits param provide a list of configuration files witch content is merged before execution.
@@ -76,7 +102,7 @@ Use KEEPASS_PASSWORD instead of --keepass command line parameter
 
 ## Pre Update
 
-To prepare a configuration or add a fix use "pre_update", the given scripts will be executed before the normal configuration.
+To prepare a configuration or add a fix use "pre_update" from a top-level configuration, the given scripts will be executed before the normal configuration.
 
 ```yml
     pre_update:
@@ -223,9 +249,28 @@ Ir model Data Config:
 
 ## Special field name
 
-field_name_id/id : to provide a xmlid to many2one fields instead of a value, without using get_ref
-field_name_ids/id : to provide a list of xmlid to many2many fields
-field_name/json : to provide a list or dict to convert into json string
+field_name_id/id : to provide a xmlid to many2one fields instead of a value, without using get_ref.
+field_name_ids/id : to provide a list of xmlid to many2many fields.
+field_name_ids.ids : to provide a string that will be evaluated to compute the raw values for a many2many field.
+field_name/json : to provide a list or dict to convert into json string.
+
+```yml
+    res_partner:
+        datas:
+            My record 1:
+                model: res.partner
+                force_id: external_config.partner_1
+                values:
+                    name: Partner 1
+                    ref: PARTNER1
+                    field_name_id/id: external_config.partner_1
+                    field_name_ids/id: [external_config.partner_2, external_config.partner_3]
+                    field_name2_ids/id:
+                        - external_config.partner_2
+                        - external_config.partner_3
+                    field_name3_ids.ids: "[[6, 0, [o.get_ref('external_config.partner_2')]]]"
+                    field_name/json: {"key1": "value1", "key2": "value2"}
+```
 
 ## Server Actions and Functions
 
@@ -283,7 +328,7 @@ To set groups on a user you can remove previous groups with "unlink all".
                       Deactivate Partner Title doctor:
                           model: res.partner.title
                           search_value_xml_id: base.res_partner_title_doctor
-                          deactivate: "[('id', '=', search_value_xml_id)]"
+                          deactivate: "[('id', '=', 'search_value_xml_id')]"
         ```
 
 ## Translations
@@ -308,6 +353,13 @@ Example:
                         </table>
 ```
 
+## Notifications
+
+To avoid notifications, add in main yaml file:
+```yml
+    no_notification: True
+```
+
 ## Mattermost Notification
 
 To set a Mattermost url and channel where to send notifications:
@@ -316,10 +368,25 @@ To set a Mattermost url and channel where to send notifications:
     mattermost_url: https://mattermost.xxx.com/hooks/dfh654fgh
 ```
 
-To avoid Mattermost notification, add in main yaml file:
+## Slack Notification
+
+To send notifications with Slack:
 ```yml
-    no_notification: True
+    slack_channel: my-channel
+    slack_token: xxxxx
 ```
+
+The Slack token can also be set by passing it as an argument with the `--slack-token` option.
+
+To send notifications from a python script:
+```python
+from odoo_configurator.import_manager import ImportManager
+def import_stuff(self, params=dict):
+    self.set_params(params)
+    self.configurator.slack.send_message('Starting Stuff Import')
+```
+
+Note: To use Slack notification, the `Odoo Configurator` Slack app must be added in the channel.
 
 ## Keepass
 
@@ -365,7 +432,7 @@ bitwarden_password: get_keepass_password('Bitwarden')
 Columns in the CSV file must be the technical name of the field.
 A column "id" is required to allow update of datas. 
 
-In yml file:
+In yml file, use the **import_csv** entry in the **import_data** section:
 
 ```yml
     import_data:
@@ -400,6 +467,8 @@ In yml file:
 
 ## Specific Import with Python script
 
+Use the **import_data** section:
+
 ```yml
 Import Scripts:
   import_data:
@@ -431,9 +500,94 @@ ImportManager.import_products = import_products
 ```
 
 
-## Generate YML data file from a model
+## Run Python script
 
-This configuration will generate a res_partner.yml file in the **config** directory
+Use the **python_script** section:
+
+```yml
+python_script:
+  Data Transfer:
+    file: scripts/transfer_script.py
+    method: data_transfer
+    params:
+      param1: TEST
+```
+
+It's possible to add connection to other odoo database by adding, for exemple, _odoo_base_v16_ in the **auth** section.
+_odoo_base_v16_ can be used easily in python scripts by referring to self.odoo_base_v16:
+
+```yml
+auth:
+  odoo:
+    url: http://odoo_my_customer17.localhost
+    dbname: my_customer17
+    username: admin
+    password: admin
+    version: 17.0
+  odoo_base_v16:
+    url: http://odoo_my_customer16.localhost
+    dbname: my_customer16
+    username: admin
+    password: admin
+    version: 16.0
+```
+
+scripts/transfer_script.py :
+
+```python
+from src.odoo_configurator.import_manager import ImportManager
+
+def data_transfer(self, params=dict):
+    # Search analytic lines on my_customer17 (the main database)
+    analytic_lines = self.odoo.search("account.analytic.line", [], fields=['name', 'partner_id'])
+    for analytic_line in analytic_lines:
+        if analytic_line['partner_id']:
+            partner_id = analytic_line['partner_id'][0]
+            # Read partner on my_customer16 (the extra database)
+            partner = self.odoo_base_v16.read('res.partner', [partner_id], fields=['name', 'email'])
+            if partner:
+                self.logger.info('analytic_line %s partner %s' % (analytic_line['id'], partner[0]['name']))
+
+ImportManager.data_transfer = data_transfer
+```
+
+## Connection to SQL database
+
+Use the **sql_auth** section:
+
+```yml
+sql_auth:
+  sql_my_shop:
+    db_type: postgresql
+    url: localhost
+    dbname: my_shop_prod
+    username: admin
+    password: get_keepass_password('My Shop Admin')
+```
+
+### Available database types
+ * Postgresql (postgresql)
+ * MS SQL Server (mssql)
+ * MySQL (mysql)
+
+scripts/sql_transfer_script.py :
+
+```python
+from src.odoo_configurator.import_manager import ImportManager
+
+def sql_transfer(self, params=dict):
+    query = 'select name, email from res_partner'
+    cr = self.sql_my_shop.execute(query)
+    for partner_values in cr.fetchall():
+            self.logger.info('Partner %s' % partner_values['name'])
+
+ImportManager.sql_transfer = sql_transfer
+```
+
+
+## Generate YML data file from a Odoo database
+
+'import_configurator_model_file' configuration will generate a res_partner.yml file in the **config** directory
 ```yml
 Actions:
     import_configurator_model_file:
@@ -444,6 +598,13 @@ Actions:
             force_export_fields: ["email_formatted", "country_code"]
             excluded_fields: ["email", "country_id"]
             context: {'active_test': False}
+```
+
+'import_configurator_module' configuration will generate a 'studio_customization' directory in the **config** directory, with a file for each model containing the records of the module.
+```yml
+ Actions:           
+    import_configurator_module:
+        module: 'studio_customization'
 ```
 
 ## Release Configuration
